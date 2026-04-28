@@ -1,549 +1,462 @@
+// main game logic
 
-let cards = [], flipped = [], lock = false;
+// game variables
+let cards = [];
+let flipped = [];
+let lock = false;
 let moves = 0;
-let timerInterval, timeLeft, initialTime;
+let timerInterval = null;
+let timeLeft = 0;
+let initialTime = 0;
 let stats = { memory: 0, miss: 0 };
 let gameActive = false;
 let currentDifficulty = 'easy';
 let currentLevel = 1;
-let coins = parseInt(localStorage.getItem('memoryGameCoins')) || 0;
+let coins = parseInt(localStorage.getItem(STORAGE_KEYS.COINS)) || 0;
 let totalMatches = 0;
 let totalAttempts = 0;
 let seenCards = {};
-let cardsSeenCount = 0;
 let cardsRemembered = 0;
 let cardsForgotten = 0;
 let lastGameStats = { moves: 0, timeUsed: 0, memory: 0, miss: 0 };
 let combo = 0;
 let lastClickTime = 0;
-document.getElementById("startBtn").onclick = startGame;
-document.getElementById("resetBtn").onclick = resetGame;
-document.getElementById("continueBtn").onclick = continueWithRemaining;
-document.getElementById("restartBtn").onclick = restartLevel;
+let imageCache = {};
 
-const difficultyConfig = {
-  easy: { 
-    pairs: 6, 
-    time: 60,
-    timeReduction: 2,  
-    cardIncrease: 2
-  },
-  medium: { 
-    pairs: 8, 
-    time: 120,
-    timeReduction: 5,
-    cardIncrease: 4
-  },
-  hard: { 
-    pairs: 12, 
-    time: 120,
-    timeReduction: 5,
-    cardIncrease: 6
-  }
-};
-function generateLevelButtons() {
-  let levelButtons = document.getElementById('levelButtons');
-  levelButtons.innerHTML = '';
-  
-  let diffConfig = difficultyConfig[currentDifficulty];
-  let baseTime = diffConfig.time;
-  let timeReduction = diffConfig.timeReduction;
-  let basePairs = diffConfig.pairs;
-  let cardIncrease = diffConfig.cardIncrease;
-  
-  for (let i = 1; i <= 3; i++) {
-    let btn = document.createElement('button');
-    btn.className = `level-btn ${i === currentLevel ? 'active' : ''}`;
-    
-    let levelTime = Math.max(30, baseTime - (i - 1) * timeReduction);
-    let additionalPairs = (i - 1) * Math.floor(cardIncrease / 2);
-    let totalPairs = Math.min(15, basePairs + additionalPairs);
-    let cardCount = totalPairs * 2;
-    
-    btn.innerHTML = `${i}<br><small>${cardCount} cards</small>`;
-    btn.onclick = () => selectLevel(i);
-    
-    levelButtons.appendChild(btn);
-  }
-}
-
-// Select Level
-function selectLevel(level) {
-  currentLevel = level;
-  document.getElementById("selectedLevelDisplay").textContent = level;
-  document.querySelectorAll('.level-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
-  document.querySelectorAll('.level-btn')[level - 1].classList.add('active');
-}
-
-generateLevelButtons();
-selectLevel(1);
-
-document.getElementById("difficulty").onchange = function() {
-  currentDifficulty = this.value;
+// event listeners
+elements.startBtn.onclick = startGame;
+elements.resetBtn.onclick = resetGame;
+elements.continueBtn.onclick = continueWithRemaining;
+elements.restartBtn.onclick = restartLevel;
+elements.difficulty.onchange = function() {
+  currentDifficulty = elements.difficulty.value;
   currentLevel = 1;
   generateLevelButtons();
   selectLevel(1);
 };
 
-// Card Themes
-const themes = {
-  fruits: [
-    "https://img.icons8.com/color/96/apple.png",
-    "https://img.icons8.com/color/96/banana.png",
-    "https://img.icons8.com/color/96/grapes.png",
-    "https://img.icons8.com/color/96/orange.png",
-    "https://img.icons8.com/color/96/watermelon.png",
-    "https://img.icons8.com/color/96/strawberry.png",
-    "https://img.icons8.com/color/96/pineapple.png",
-    "https://img.icons8.com/color/96/mango.png",
-    "https://img.icons8.com/color/96/cherry.png",
-    "https://img.icons8.com/color/96/kiwi.png",
-    "https://img.icons8.com/color/96/peach.png",
-    "https://img.icons8.com/color/96/pear.png",
-    "https://img.icons8.com/color/96/coconut.png",
-    "https://img.icons8.com/color/96/melon.png",
-    "https://img.icons8.com/color/96/tomato.png"
-  ],
-  vegetables: [
-    "https://img.icons8.com/color/96/carrot.png",
-    "https://img.icons8.com/color/96/broccoli.png",
-    "https://img.icons8.com/color/96/corn.png",
-    "https://img.icons8.com/color/96/eggplant.png",
-    "https://img.icons8.com/color/96/potato.png",
-    "https://img.icons8.com/color/96/onion.png",
-    "https://img.icons8.com/color/96/lettuce.png",
-    "https://img.icons8.com/color/96/chili-pepper.png",
-    "https://img.icons8.com/color/96/cucumber.png",
-    "https://img.icons8.com/color/96/sweet-potato.png",
-    "https://img.icons8.com/color/96/peas.png",
-    "https://img.icons8.com/color/96/bell-pepper.png",
-    "https://img.icons8.com/color/96/garlic.png",
-    "https://img.icons8.com/color/96/ginger.png",
-    "https://img.icons8.com/color/96/mushroom.png"
-  ],
-  flowers: [
-    "https://img.icons8.com/color/96/rose.png",
-    "https://img.icons8.com/color/96/tulip.png",
-    "https://img.icons8.com/color/96/sunflower.png",
-    "https://img.icons8.com/color/96/lily.png",
-    "https://img.icons8.com/color/96/jasmine.png",
-    "https://img.icons8.com/color/96/lotus.png",
-    "https://img.icons8.com/color/96/flower.png",
-    "https://img.icons8.com/color/96/orchid.png",
-    "https://img.icons8.com/color/96/daisy.png",
-    "https://img.icons8.com/color/96/bouquet.png",
-    "https://img.icons8.com/color/96/hibiscus.png",
-    "https://img.icons8.com/color/96/cherry-blossom.png",
-    "https://img.icons8.com/color/96/poppy.png",
-    "https://img.icons8.com/color/96/lavender.png",
-    "https://img.icons8.com/color/96/plant.png"
-  ],
-  animals: [
-    "https://img.icons8.com/color/96/dog.png",
-    "https://img.icons8.com/color/96/cat.png",
-    "https://img.icons8.com/color/96/lion.png",
-    "https://img.icons8.com/color/96/tiger.png",
-    "https://img.icons8.com/color/96/panda.png",
-    "https://img.icons8.com/color/96/koala.png",
-    "https://img.icons8.com/color/96/frog.png",
-    "https://img.icons8.com/color/96/monkey.png",
-    "https://img.icons8.com/color/96/pig.png",
-    "https://img.icons8.com/color/96/cow.png",
-    "https://img.icons8.com/color/96/rabbit.png",
-    "https://img.icons8.com/color/96/fox.png",
-    "https://img.icons8.com/color/96/wolf.png",
-    "https://img.icons8.com/color/96/horse.png",
-    "https://img.icons8.com/color/96/deer.png"
-  ],
-  birds: [
-    "https://img.icons8.com/color/96/bird.png",
-    "https://img.icons8.com/color/96/eagle.png",
-    "https://img.icons8.com/color/96/owl.png",
-    "https://img.icons8.com/color/96/duck.png",
-    "https://img.icons8.com/color/96/parrot.png",
-    "https://img.icons8.com/color/96/swan.png",
-    "https://img.icons8.com/color/96/flamingo.png",
-    "https://img.icons8.com/color/96/chicken.png",
-    "https://img.icons8.com/color/96/penguin.png",
-    "https://img.icons8.com/color/96/dove.png",
-    "https://img.icons8.com/color/96/turkey.png",
-    "https://img.icons8.com/color/96/baby-chicken.png",
-    "https://img.icons8.com/color/96/rooster.png",
-    "https://img.icons8.com/color/96/peacock.png",
-    "https://img.icons8.com/color/96/hummingbird.png"
-  ],
-  emojis: [
-    "😀", "❤️", "⭐", "🔥", "👍", "👏", "🙌", "🤔", "😎", "🎉", "💎", "👑", "🎁", "🏆", "⚡"
-  ]
-};
-
-// Image Preloading
-let imageCache = {};
-let imagesLoaded = 0;
-let totalImages = 0;
-
-function preloadImages() {
-  let allUrls = [];
-  Object.values(themes).forEach(themeArray => {
-    allUrls = allUrls.concat(themeArray);
-  });
-  
-  totalImages = allUrls.length;
-  
-  allUrls.forEach((imageUrl, index) => {
-    if (!imageCache[imageUrl]) {
-      let img = new Image();
-      
-      img.onload = function() {
-        imagesLoaded++;
-        console.log(`✅ Loaded ${imagesLoaded}/${totalImages}: ${imageUrl.split('/').pop()}`);
-      };
-      
-      img.onerror = function() {
-        imagesLoaded++;
-        console.warn(`❌ Failed to load: ${imageUrl}`);
-      };
-      
-      img.src = imageUrl;
-      imageCache[imageUrl] = img;
-    }
-  });
-  
-  console.log(`🔄 Preloading ${totalImages} images...`);
-}
-
+// initialize the game when page loads
+generateLevelButtons();
+selectLevel(1);
 preloadImages();
+initializeGame();
 
-// Emoji Fallback
-function getEmojiFallback(imageUrl) {
-  const emojiMap = {
-    'smiling.png': '😀',
-    'heart.png': '❤️',
-    'star.png': '⭐',
-    'fire.png': '🔥',
-    'thumbs-up.png': '👍',
-    'clapping-hands.png': '👏',
-    'raising-hands.png': '🙌',
-    'thinking-face.png': '🤔',
-    'sunglasses.png': '😎',
-    'party-popper.png': '🎉',
-    'gem-stone.png': '💎',
-    'crown.png': '👑',
-    'gift.png': '🎁',
-    'trophy.png': '🏆',
-    'lightning-bolt.png': '⚡'
-  };
+// create level buttons
+function generateLevelButtons() {
+  elements.levelButtons.innerHTML = '';
+  let config = DIFFICULTY_CONFIG[currentDifficulty];
   
-  let filename = imageUrl.split('/').pop();
-  return emojiMap[filename] || '🎴';
-}
-
-function shuffle(a) {
-  for (let i = a.length - 1; i > 0; i--) {
-    let j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+  for (let i = 1; i <= 3; i++) {
+    let btn = document.createElement('button');
+    btn.className = 'level-btn';
+    if (i == currentLevel) {
+      btn.className += ' active';
+    }
+    
+    let levelTime = calculateLevelTime(currentDifficulty, i);
+    let cardCount = calculateCardCount(currentDifficulty, i);
+    
+    btn.innerHTML = i + '<br><small>' + cardCount + ' cards</small><br><small>⏱️ ' + levelTime + 's</small>';
+    
+    // using let to preserve the value
+    let levelNum = i;
+    btn.onclick = function() {
+      selectLevel(levelNum);
+    };
+    
+    elements.levelButtons.appendChild(btn);
   }
 }
 
+// select a level
+function selectLevel(level) {
+  currentLevel = level;
+  elements.selectedLevelDisplay.textContent = level;
+  
+  // update active button
+  let buttons = document.querySelectorAll('.level-btn');
+  for (let i = 0; i < buttons.length; i++) {
+    buttons[i].classList.remove('active');
+  }
+  buttons[level - 1].classList.add('active');
+}
+
+// preload all images
+function preloadImages() {
+  let allUrls = [];
+  // get all images from all themes
+  for (let theme in THEMES) {
+    allUrls = allUrls.concat(THEMES[theme]);
+  }
+  
+  for (let i = 0; i < allUrls.length; i++) {
+    let url = allUrls[i];
+    if (!imageCache[url] && isImageUrl(url)) {
+      let img = new Image();
+      img.onload = function() {
+        console.log('Loaded image');
+      };
+      img.src = url;
+      imageCache[url] = img;
+    }
+  }
+}
+
+// start the game
 function startGame() {
-  document.getElementById("result").style.display = "none";
-
-  let diffConfig = difficultyConfig[currentDifficulty];
-  let basePairs = diffConfig.pairs;
-  let additionalPairs = (currentLevel - 1) * Math.floor(diffConfig.cardIncrease / 2);
-  let totalPairs = Math.min(15, basePairs + additionalPairs);
-  let count = totalPairs * 2;
-  let baseTime = diffConfig.time;
-  let timeReduction = (currentLevel - 1) * diffConfig.timeReduction;
-  let timerDuration = Math.max(30, baseTime - timeReduction);
+  hideResult();
   
-  let themeName = document.getElementById("theme").value;
+  let cardCount = calculateCardCount(currentDifficulty, currentLevel);
+  let timerDuration = calculateLevelTime(currentDifficulty, currentLevel);
+  let themeName = elements.theme.value;
   
-  let themeArray = themes[themeName];
-  let shuffledTheme = [...themeArray];
-  shuffle(shuffledTheme);
-  let selected = shuffledTheme.slice(0, count / 2);
-  let values = [...selected, ...selected];
+  // get card values and create pairs
+  let cardValues = generateCardValues(themeName, cardCount);
   
-  cards = values.map((v, i) => ({
-    id: i,
-    value: v,
-    isFlipped: false,
-    isMatched: false,
-    seen: 0
-  }));
-
+  // create card objects
+  cards = [];
+  for (let i = 0; i < cardValues.length; i++) {
+    cards.push(createCardObject(i, cardValues[i]));
+  }
+  
+  // shuffle the cards
   shuffle(cards);
+  
+  // reset everything
+  resetGameState();
+  initialTime = timerDuration;
+  
+  // setup the board
+  setupGrid(cardCount);
+  clearBoard();
+  
+  // create divs for cards
+  for (let i = 0; i < cards.length; i++) {
+    let card = cards[i];
+    let div = document.createElement("div");
+    div.className = "card";
+    div.id = "card-" + card.id;
+    
+    // closure to keep reference to card
+    (function(c) {
+      div.onclick = function() {
+        clickCard(c);
+      };
+    })(card);
+    
+    elements.board.appendChild(div);
+  }
+  
+  updateMemoryRateDisplay(cardsRemembered, cardsForgotten);
+  
+  // preview - show all cards for 2 seconds
+  for (let i = 0; i < cards.length; i++) {
+    cards[i].isFlipped = true;
+  }
+  render();
+  
+  // after 2 seconds hide cards and start game
+  setTimeout(function() {
+    for (let i = 0; i < cards.length; i++) {
+      cards[i].isFlipped = false;
+    }
+    render();
+    gameActive = true; // now player can click
+    startTimer(timerDuration);
+    updateUI();
+    
+    console.log('Game started:', currentDifficulty, 'Level', currentLevel);
+  }, GAME_CONSTANTS.PREVIEW_DURATION);
+}
 
+// reset game state
+function resetGameState() {
   moves = 0;
   stats = { memory: 0, miss: 0 };
   totalMatches = 0;
   totalAttempts = 0;
   seenCards = {};
-  cardsSeenCount = 0;
   cardsRemembered = 0;
   cardsForgotten = 0;
   combo = 0;
   lastGameStats = { moves: 0, timeUsed: 0, memory: 0, miss: 0 };
   gameActive = false;
-  initialTime = timerDuration;
+  flipped = [];
+  lock = false;
+}
 
-  setupGrid(count);
-  let board = document.getElementById("board");
-  board.innerHTML = "";
-  cards.forEach(c => {
+// render the board
+function render() {
+  clearBoard();
+  
+  for (let i = 0; i < cards.length; i++) {
+    let card = cards[i];
     let div = document.createElement("div");
     div.className = "card";
-    div.onclick = () => clickCard(c);
-    board.appendChild(div);
-  });
-  
-  updateMemoryTracker();
-  cards.forEach(c => c.isFlipped = true);
-  render();
-  
-  setTimeout(() => {
-    cards.forEach(c => c.isFlipped = false);
-    render();
-    gameActive = true;
-    startTimer(timerDuration);
-    updateCoinsDisplay();
+    div.id = "card-" + card.id;
     
-    //console.log(`🎮 Game started: ${currentDifficulty} Level ${currentLevel}, ${count} cards, ${timerDuration}s`);
-  }, 2000);
+    if (card.isFlipped || card.isMatched) {
+      div.classList.add("flipped");
+      renderCardContent(div, card);
+    }
+    
+    if (card.isMatched) {
+      div.classList.add("hide");
+    }
+    
+    (function(c) {
+      div.onclick = function() {
+        clickCard(c);
+      };
+    })(card);
+    
+    elements.board.appendChild(div);
+  }
+  
+  updateScoreDisplay(moves, combo, stats);
+  updateMemoryRateDisplay(cardsRemembered, cardsForgotten);
 }
-function setupGrid(count) {
-  let cols = Math.ceil(Math.sqrt(count));
-  document.getElementById("board").style.gridTemplateColumns = `repeat(${cols}, 80px)`;
-}
-function updateCardUI(card) {
-  let board = document.getElementById("board");
-  let div = document.getElementById(`card-${card.id}`);
-  if (!div) return;
-  div.className = "card";
-  div.id = `card-${card.id}`;
 
+// render card content
+function renderCardContent(div, card) {
+  if (isImageUrl(card.value)) {
+    // its an image
+    let img;
+    if (imageCache[card.value]) {
+      img = imageCache[card.value].cloneNode();
+    } else {
+      img = new Image();
+    }
+    img.src = card.value;
+    
+    // if image fails to load
+    img.onerror = function() {
+      this.style.display = 'none';
+      div.innerHTML = '<span class="emoji-card">❌</span>';
+    };
+    
+    div.innerHTML = "";
+    div.appendChild(img);
+  } else {
+    // its an emoji
+    div.innerHTML = '<span class="emoji-card">' + card.value + '</span>';
+  }
+}
+
+// update single card ui
+function updateCardUI(card) {
+  let div = document.getElementById("card-" + card.id);
+  if (!div) return;
+  
+  div.className = "card";
+  div.id = "card-" + card.id;
+  
   if (card.isFlipped || card.isMatched) {
     div.classList.add("flipped");
-    if (card.value.startsWith('http')) {
-      let img = imageCache[card.value]?.cloneNode() || new Image();
-      img.src = card.value;
-      img.onerror = function() {
-        this.style.display = 'none';
-        div.innerHTML = `<span class="emoji-card">${getEmojiFallback(card.value)}</span>`;
-      };
-      div.innerHTML = "";
-      div.appendChild(img);
-    } else {
-      div.innerHTML = `<span class="emoji-card">${card.value}</span>`;
-    }
+    renderCardContent(div, card);
   } else {
     div.innerHTML = "";
   }
+  
   if (card.isMatched) {
     div.classList.add("hide");
   }
-  document.getElementById("score").textContent =
-    `Moves:${moves} | Combo:${combo} | Memory:${stats.memory} Miss:${stats.miss}`;
   
-  updateMemoryTracker();
+  updateScoreDisplay(moves, combo, stats);
+  updateMemoryRateDisplay(cardsRemembered, cardsForgotten);
 }
-function render() {
-  let board = document.getElementById("board");
-  board.innerHTML = "";
-  cards.forEach(c => {
-    let div = document.createElement("div");
-    div.className = "card";
-    div.id = `card-${c.id}`;
-    if (c.isFlipped || c.isMatched) {
-      div.classList.add("flipped");
-      if (c.value.startsWith('http')) {
-        let img = imageCache[c.value]?.cloneNode() || new Image();
-        img.src = c.value;
-        img.onerror = function() {
-          this.style.display = 'none';
-          div.innerHTML = `<span class="emoji-card">${getEmojiFallback(c.value)}</span>`;
-        };
-        div.innerHTML = "";
-        div.appendChild(img);
-      } else {
-        div.innerHTML = `<span class="emoji-card">${c.value}</span>`;
-      }
-    }
-
-    if (c.isMatched) div.classList.add("hide");
-
-    div.onclick = () => clickCard(c);
-    board.appendChild(div);
-  });
-
-  document.getElementById("score").textContent =
-    `Moves:${moves} | Combo:${combo} | Memory:${stats.memory} Miss:${stats.miss}`;
-    
-  updateMemoryTracker();
-}
-function clickCard(c) {
+// click on a card
+function clickCard(card) {
+  // prevent fast clicking
   let now = Date.now();
-  if (now - lastClickTime < 200) return;
+  if (now - lastClickTime < GAME_CONSTANTS.CLICK_THROTTLE) return;
   lastClickTime = now;
-
-  if (lock || c.isFlipped || c.isMatched || !gameActive) return;
-
-  c.isFlipped = true;
-  c.seen++;
-
-  if (!seenCards[c.value]) seenCards[c.value] = new Set();
-  seenCards[c.value].add(c.id);
-
-  flipped.push(c);
-
-  updateCardUI(c);
+  
+  // check if can click
+  if (lock || card.isFlipped || card.isMatched || !gameActive) return;
+  
+  // flip the card
+  card.isFlipped = true;
+  card.seen++;
+  
+  // track seen cards
+  if (!seenCards[card.value]) {
+    seenCards[card.value] = new Set();
+  }
+  seenCards[card.value].add(card.id);
+  
+  flipped.push(card);
+  updateCardUI(card);
   saveGame();
-
-  if (flipped.length === 2) {
+  
+  // if 2 cards flipped check for match
+  if (flipped.length == 2) {
     moves++;
     totalAttempts++;
     check();
   }
 }
 
-
-function checkWin() {
-  if (cards.every(c => c.isMatched)) {
-    clearInterval(timerInterval);
-    gameActive = false;
-    lastGameStats.moves = moves;
-    lastGameStats.timeUsed = initialTime - timeLeft;
-    lastGameStats.memory = stats.memory;
-    lastGameStats.guess = stats.guess;
-    lastGameStats.miss = stats.miss;
-    
-    let timeBonus = Math.floor(timeLeft / 10);
-    let memoryBonus = cardsRemembered * 5;
-    let levelBonus = currentLevel * 10;
-    let coinsEarned = 50 + timeBonus + memoryBonus + levelBonus;
-    
-    coins += coinsEarned;
-    localStorage.setItem('memoryGameCoins', coins);
-
-    adjustDifficulty();
-    
-    let result = document.getElementById("result");
-    result.style.display = "block";
-    let best = updateBestScore();
-    updateCoinsDisplay();
-    
-    let memoryRate = (cardsRemembered + cardsForgotten) > 0 ? 
-      Math.round((cardsRemembered / (cardsRemembered + cardsForgotten)) * 100) : 0;
-    
-    result.innerHTML = `
-      <h2>🎉 Level ${currentLevel} Complete!</h2>
-      <p><strong>Difficulty:</strong> ${currentDifficulty.charAt(0).toUpperCase() + currentDifficulty.slice(1)}</p>
-      <p><strong>Time Used:</strong> ${format(lastGameStats.timeUsed)}</p>
-      <p><strong>Moves:</strong> ${lastGameStats.moves}</p>
-      <p><strong>Memory:</strong> ${lastGameStats.memory} | <strong>Miss:</strong> ${lastGameStats.miss}</p>
-      <p><strong>Best Combo:</strong> ${combo}</p>
-      <p>🏆 <strong>Best Moves:</strong> ${best} | <strong>Memory Rate:</strong> ${memoryRate}%</p>
-      <hr style="margin: 15px 0; border: 1px solid rgba(255,255,255,0.3);">
-      <h3>💰 Coins Earned: ${coinsEarned}</h3>
-      <p style="font-size: 12px; opacity: 0.8;">Base: 50 | Time: ${timeBonus} | Memory: ${memoryBonus} | Level: ${levelBonus}</p>
-      <p><strong>Total Coins:</strong> ${coins}</p>
-      <button onclick="nextLevel()" style="margin-top: 15px; padding: 12px 24px; font-size: 16px; font-weight: bold; background: linear-gradient(135deg, #4CAF50, #45a049); color: white; border: none; border-radius: 8px; cursor: pointer;">🎮 Next Level</button>
-      <button onclick="resetGame()" style="margin-top: 10px; padding: 10px 20px; font-size: 14px; background: linear-gradient(135deg, #f44336, #d32f2f); color: white; border: none; border-radius: 8px; cursor: pointer;">🔄 Reset Game</button>
-    `;
-
-    saveGame();
+// check if cards match
+async function check() {
+  let a = flipped[0];
+  let b = flipped[1];
+  lock = true;
+  
+  let seenBefore = false;
+  if (seenCards[a.value] && seenCards[a.value].size >= 2) {
+    seenBefore = true;
   }
+  
+  if (a.value == b.value) {
+    // MATCH!
+    await handleMatch(a, b, seenBefore);
+  } else {
+    // no match
+    await handleMismatch(a, b);
+  }
+  
+  flipped = [];
+  lock = false;
+  saveGame();
 }
 
-
-function nextLevel() {
+// handle matching cards
+async function handleMatch(a, b, seenBefore) {
+  totalMatches++;
+  combo++;
+  let bonus = combo * GAME_CONSTANTS.COMBO_BONUS_MULTIPLIER;
+  coins += bonus;
   
-  if (currentDifficulty === 'easy' && currentLevel === 3) {
+  if (seenBefore) {
+    stats.memory++;
+    cardsRemembered++;
+  } else {
+    stats.miss++;
+    cardsForgotten++;
+  }
+  
+  await wait(GAME_CONSTANTS.MATCH_DELAY);
+  
+  a.isMatched = true;
+  b.isMatched = true;
+  
+  updateCardUI(a);
+  updateCardUI(b);
+  
+  checkWin();
+}
+
+// handle mismatch
+async function handleMismatch(a, b) {
+  combo = 0; // reset combo
+  
+  if (a.seen > 1 || b.seen > 1) {
+    stats.miss++;
+    cardsForgotten++;
+  }
+  
+  await wait(GAME_CONSTANTS.MISMATCH_DELAY);
+  
+  a.isFlipped = false;
+  b.isFlipped = false;
+  
+  updateCardUI(a);
+  updateCardUI(b);
+}
+
+// check if player won
+function checkWin() {
+  // check if all cards matched
+  let allMatched = true;
+  for (let i = 0; i < cards.length; i++) {
+    if (!cards[i].isMatched) {
+      allMatched = false;
+      break;
+    }
+  }
+  
+  if (!allMatched) return;
+  
+  clearInterval(timerInterval);
+  gameActive = false;
+  
+  // save stats
+  lastGameStats.moves = moves;
+  lastGameStats.timeUsed = initialTime - timeLeft;
+  lastGameStats.memory = stats.memory;
+  lastGameStats.miss = stats.miss;
+  
+  // calculate coins
+  let coinsEarned = calculateCoinsEarned(timeLeft, cardsRemembered, currentLevel);
+  coins += coinsEarned;
+  localStorage.setItem(STORAGE_KEYS.COINS, coins);
+  
+  // adjust difficulty
+  adjustDifficulty();
+  
+  // show result
+  let bestMoves = updateBestScore();
+  let memoryRate = calculateMemoryRate(cardsRemembered, cardsForgotten);
+  
+  let html = '<h2>🎉 Level ' + currentLevel + ' Complete!</h2>';
+  html += '<p><strong>Difficulty:</strong> ' + currentDifficulty.charAt(0).toUpperCase() + currentDifficulty.slice(1) + '</p>';
+  html += '<p><strong>Time Used:</strong> ' + formatTime(lastGameStats.timeUsed) + '</p>';
+  html += '<p><strong>Moves:</strong> ' + lastGameStats.moves + '</p>';
+  html += '<p><strong>Memory:</strong> ' + lastGameStats.memory + ' | <strong>Miss:</strong> ' + lastGameStats.miss + '</p>';
+  html += '<p><strong>Best Combo:</strong> ' + combo + '</p>';
+  html += '<p>🏆 <strong>Best Moves:</strong> ' + bestMoves + ' | <strong>Memory Rate:</strong> ' + Math.round(memoryRate) + '%</p>';
+  html += '<hr style="margin: 15px 0; border: 1px solid rgba(255,255,255,0.3);">';
+  html += '<h3>💰 Coins Earned: ' + coinsEarned + '</h3>';
+  html += '<p style="font-size: 12px; opacity: 0.8;">Base: 50 | Time: ' + Math.floor(timeLeft / 10) + ' | Memory: ' + (cardsRemembered * 5) + ' | Level: ' + (currentLevel * 10) + '</p>';
+  html += '<p><strong>Total Coins:</strong> ' + coins + '</p>';
+  html += '<button onclick="nextLevel()" style="margin-top: 15px; padding: 12px 24px; font-size: 16px; font-weight: bold; background: linear-gradient(135deg, #4CAF50, #45a049); color: white; border: none; border-radius: 8px; cursor: pointer;">🎮 Next Level</button>';
+  html += '<button onclick="resetGame()" style="margin-top: 10px; padding: 10px 20px; font-size: 14px; background: linear-gradient(135deg, #f44336, #d32f2f); color: white; border: none; border-radius: 8px; cursor: pointer;">🔄 Reset Game</button>';
+  
+  showResult(html);
+  saveGame();
+}
+
+// next level
+function nextLevel() {
+  // auto progress through difficulties
+  if (currentDifficulty == 'easy' && currentLevel == 3) {
     currentDifficulty = 'medium';
     currentLevel = 1;
-    showMessage(`🎯 Advancing to Medium difficulty!`);
-  } else if (currentDifficulty === 'medium' && currentLevel === 3) {
+    showMessage('🎯 Advancing to Medium difficulty!');
+  } else if (currentDifficulty == 'medium' && currentLevel == 3) {
     currentDifficulty = 'hard';
     currentLevel = 1;
-    showMessage(`🔥 Advancing to Hard difficulty!`);
+    showMessage('🔥 Advancing to Hard difficulty!');
   } else {
     currentLevel++;
-    if (currentLevel > 3) {
-      currentLevel = 1;
-    }
+    if (currentLevel > 3) currentLevel = 1;
   }
   
-  document.getElementById("currentLevelDisplay").textContent = currentLevel;
-  document.getElementById("difficulty").value = currentDifficulty;
+  elements.difficulty.value = currentDifficulty;
   generateLevelButtons();
   selectLevel(currentLevel);
-  startGame(); 
+  startGame();
 }
 
-
-function wait(ms) {
-  return new Promise(res => setTimeout(res, ms));
-}
-
-async function check() {
-  let [a, b] = flipped;
-  lock = true;
-
-  let seenBefore = seenCards[a.value]?.size >= 2;
-
-  if (a.value === b.value) {
-    totalMatches++;
-    combo++;
-    let bonus = combo * 2;
-    coins += bonus;
-
-    if (seenBefore) {
-      stats.memory++;
-      cardsRemembered++;
-    } else {
-      stats.miss++;
-      cardsForgotten++;
-    }
-
-    await wait(500);
-
-    a.isMatched = true;
-    b.isMatched = true;
-
-    updateCardUI(a);
-    updateCardUI(b);
-
-    flipped = [];
-    lock = false;
-
-    saveGame();
-    checkWin();
-
-  } else {
-    combo = 0;
-
-    if (a.seen > 1 || b.seen > 1) {
-      stats.miss++;
-      cardsForgotten++;
-    }
-
-    await wait(700);
-
-    a.isFlipped = false;
-    b.isFlipped = false;
-
-    updateCardUI(a);
-    updateCardUI(b);
-
-    flipped = [];
-    lock = false;
-
-    saveGame();
+// adjust difficulty based on performance
+function adjustDifficulty() {
+  let memoryRate = calculateMemoryRate(cardsRemembered, cardsForgotten);
+  
+  if (memoryRate > GAME_CONSTANTS.ADAPTIVE_HIGH_THRESHOLD && currentLevel < 3) {
+    currentLevel++;
+    showMessage('🎯 Great memory! Advanced to Level ' + currentLevel + '!');
+  } else if (memoryRate < GAME_CONSTANTS.ADAPTIVE_LOW_THRESHOLD && currentLevel > 1) {
+    currentLevel--;
+    showMessage('📉 Level adjusted to ' + currentLevel + ' for better experience');
   }
+  
+  elements.currentLevelDisplay.textContent = currentLevel;
+  generateLevelButtons();
+  selectLevel(currentLevel);
 }
+
+// timer
 function startTimer(duration) {
   clearInterval(timerInterval);
   
@@ -552,13 +465,13 @@ function startTimer(duration) {
   } else {
     timeLeft = initialTime;
   }
-
-  document.getElementById("timer").textContent = format(timeLeft);
-
-  timerInterval = setInterval(() => {
+  
+  updateTimerDisplay(timeLeft);
+  
+  timerInterval = setInterval(function() {
     timeLeft--;
-    document.getElementById("timer").textContent = format(timeLeft);
-
+    updateTimerDisplay(timeLeft);
+    
     if (timeLeft <= 0) {
       clearInterval(timerInterval);
       reshuffleRemaining();
@@ -568,222 +481,216 @@ function startTimer(duration) {
   }, 1000);
 }
 
-function resetGame() {
-  clearInterval(timerInterval);
-  gameActive = false;
-  cards = [];
-  flipped = [];
-  lock = false;
-  moves = 0;
-  stats = { memory: 0, miss: 0 };
-  totalMatches = 0;
-  totalAttempts = 0;
-  currentLevel = 1;
-  seenCards = {};
-  cardsSeenCount = 0;
-  cardsRemembered = 0;
-  cardsForgotten = 0;
-  combo = 0;
-  lastGameStats = { moves: 0, timeUsed: 0, memory: 0, miss: 0 };
-  timeLeft = 0;
-  
-  document.getElementById("board").innerHTML = "";
-  document.getElementById("timer").textContent = "0:00";
-  document.getElementById("score").textContent = "";
-  document.getElementById("result").style.display = "none";
-  
-  generateLevelButtons();
-  selectLevel(1);
-  updateMemoryTracker();
-  updateCoinsDisplay();
-  localStorage.removeItem("memoryGameState");
-  
-  showMessage("🔄 Game reset! Select options and click Start Game.");
-}
+// time ran out
 function reshuffleRemaining() {
   clearInterval(timerInterval);
   gameActive = false;
   
-  let remaining = cards.filter(c => !c.isMatched);
+  let remaining = [];
+  for (let i = 0; i < cards.length; i++) {
+    if (!cards[i].isMatched) {
+      remaining.push(cards[i]);
+    }
+  }
   let remainingCount = remaining.length;
   
-  console.log(`⏰ Time's up! Remaining cards: ${remainingCount}, Your coins: ${coins}`);
+  console.log("Time's up! Remaining:", remainingCount, "Coins:", coins);
   
-  if (remainingCount === 0) {
-    console.log("No remaining cards, game complete!");
+  if (remainingCount == 0) {
+    console.log("No remaining cards!");
     return;
   }
   
-  document.getElementById("remainingCards").textContent = remainingCount;
-  document.getElementById("popupCoins").textContent = coins;
+  elements.remainingCards.textContent = remainingCount;
+  elements.popupCoins.textContent = coins;
   
-  let continueBtn = document.getElementById("continueBtn");
-  if (coins >= 100) {
-    continueBtn.disabled = false;
-  } else {
-    continueBtn.disabled = true;
-    
-  }
+  let canContinue = coins >= GAME_CONSTANTS.CONTINUE_COST;
+  elements.continueBtn.disabled = !canContinue;
   
-  document.getElementById("continuePopup").classList.add("show");
-}
-function updateMemoryTracker() {
-  let memoryRateEl = document.getElementById("memoryRate");
-  let totalTracked = cardsRemembered + cardsForgotten;
-  let memoryRate = totalTracked > 0 ? (cardsRemembered / totalTracked) * 100 : 0;
-  memoryRateEl.textContent = Math.round(memoryRate) + "%";
-  
-  if (memoryRate >= 75) {
-    memoryRateEl.style.color = "#4CAF50";
-  } else if (memoryRate >= 50) {
-    memoryRateEl.style.color = "#FFC107";
-  } else if (memoryRate >= 25) {
-    memoryRateEl.style.color = "#FF9800";
-  } else if (totalTracked > 0) {
-    memoryRateEl.style.color = "#f44336";
-  } else {
-    memoryRateEl.style.color = "#4CAF50";
-  }
+  showContinuePopup();
 }
 
+// continue after time out
 function continueWithRemaining() {
-  if (coins < 100) return;
+  if (coins < GAME_CONSTANTS.CONTINUE_COST) return;
   
-  coins -= 100;
-  localStorage.setItem('memoryGameCoins', coins);
-  updateCoinsDisplay();
-  document.getElementById("continuePopup").classList.remove("show");
+  coins -= GAME_CONSTANTS.CONTINUE_COST;
+  localStorage.setItem(STORAGE_KEYS.COINS, coins);
+  updateUI();
+  hideContinuePopup();
   
-  let matched = cards.filter(c => c.isMatched);
-  let remaining = cards.filter(c => !c.isMatched);
+  // get remaining cards
+  let remaining = [];
+  for (let i = 0; i < cards.length; i++) {
+    if (!cards[i].isMatched) {
+      remaining.push(cards[i]);
+    }
+  }
   
-  remaining.forEach(c => {
-    c.isFlipped = false;
-  });
-  
+  // reset and shuffle
+  for (let i = 0; i < remaining.length; i++) {
+    remaining[i].isFlipped = false;
+  }
   shuffle(remaining);
+  
   cards = remaining;
   flipped = [];
-  let count = cards.length;
-  setupGrid(count);
-  gameActive = false; 
+  
+  setupGrid(cards.length);
+  gameActive = false;
   render();
-  updateMemoryTracker();
-  cards.forEach(c => c.isFlipped = true);
+  updateMemoryRateDisplay(cardsRemembered, cardsForgotten);
+  
+  // preview mode
+  for (let i = 0; i < cards.length; i++) {
+    cards[i].isFlipped = true;
+  }
   render();
   
-  setTimeout(() => {
-    cards.forEach(c => c.isFlipped = false);
+  setTimeout(function() {
+    for (let i = 0; i < cards.length; i++) {
+      cards[i].isFlipped = false;
+    }
     render();
-    gameActive = true; 
-    let newTime = Math.max(15, Math.floor(timeLeft + 10));
+    gameActive = true;
+    
+    let newTime = timeLeft + GAME_CONSTANTS.CONTINUE_TIME_BONUS;
+    if (newTime < GAME_CONSTANTS.MIN_CONTINUE_TIME) {
+      newTime = GAME_CONSTANTS.MIN_CONTINUE_TIME;
+    }
     startTimer(newTime);
     
-    showMessage(`✅ Continuing with ${count} cards! -100 coins`);
-  }, 2000);
+    showMessage('✅ Continuing with ' + cards.length + ' cards! -' + GAME_CONSTANTS.CONTINUE_COST + ' coins');
+  }, GAME_CONSTANTS.PREVIEW_DURATION);
 }
+
+// restart level
 function restartLevel() {
-  document.getElementById("continuePopup").classList.remove("show");
+  hideContinuePopup();
   startGame();
   showMessage("🔄 Level restarted!");
 }
 
-function updateCoinsDisplay() {
-  document.getElementById("coins").textContent = coins;
-  document.getElementById("currentLevelDisplay").textContent = currentLevel;
-  let best = getBestScore();
-  document.getElementById("bestMoves").textContent = best === 0 ? '-' : best;
+// reset game
+function resetGame() {
+  clearInterval(timerInterval);
+  
+  resetGameState();
+  cards = [];
+  currentLevel = 1;
+  timeLeft = 0;
+  
+  clearBoard();
+  updateTimerDisplay(0);
+  elements.score.textContent = "";
+  hideResult();
+  
+  generateLevelButtons();
+  selectLevel(1);
+  updateMemoryRateDisplay(0, 0);
+  updateUI();
+  
+  localStorage.removeItem(STORAGE_KEYS.GAME_STATE);
+  
+  showMessage("🔄 Game reset! Select options and click Start Game.");
 }
 
+// update ui
+function updateUI() {
+  updateCoinsDisplay(coins, currentLevel, getBestScore());
+}
 
+// get best score
 function getBestScore() {
-  let key = "bestMoves_" + currentDifficulty + "_" + currentLevel;
+  let key = STORAGE_KEYS.BEST_MOVES_PREFIX + currentDifficulty + '_' + currentLevel;
   let best = localStorage.getItem(key);
-  return best ? parseInt(best) : 0;
+  if (best) {
+    return parseInt(best);
+  }
+  return 0;
 }
 
-
+// update best score
 function updateBestScore() {
-  let key = "bestMoves_" + currentDifficulty + "_" + currentLevel;
+  let key = STORAGE_KEYS.BEST_MOVES_PREFIX + currentDifficulty + '_' + currentLevel;
   let best = localStorage.getItem(key);
-
+  
   if (!best || moves < parseInt(best)) {
     localStorage.setItem(key, moves);
-    best = moves;
+    return moves;
   }
-
+  
   return best;
 }
 
-function showMessage(msg) {
-  let el = document.getElementById("score");
-  el.textContent = msg;
-
-  setTimeout(() => {
-    render();
-  }, 1500);
-}
-
-function format(s) {
-  let m = Math.floor(s / 60);
-  let sec = s % 60;
-  return `${m}:${sec < 10 ? "0" : ""}${sec}`;
-}
+// save game
 function saveGame() {
-  localStorage.setItem("memoryGameState", JSON.stringify({
-    cards,
-    moves,
-    timeLeft,
-    currentDifficulty,
-    currentLevel,
-    stats,
-    coins,
-    combo,
-    totalMatches,
-    totalAttempts,
-    seenCards: Object.fromEntries(Object.entries(seenCards).map(([k, v]) => [k, [...v]])),
-    cardsRemembered,
-    cardsForgotten
-  }));
+  // convert Sets to arrays for saving
+  let seenCardsArray = {};
+  for (let key in seenCards) {
+    seenCardsArray[key] = Array.from(seenCards[key]);
+  }
+  
+  let gameState = {
+    cards: cards,
+    moves: moves,
+    timeLeft: timeLeft,
+    currentDifficulty: currentDifficulty,
+    currentLevel: currentLevel,
+    stats: stats,
+    coins: coins,
+    combo: combo,
+    totalMatches: totalMatches,
+    totalAttempts: totalAttempts,
+    seenCards: seenCardsArray,
+    cardsRemembered: cardsRemembered,
+    cardsForgotten: cardsForgotten
+  };
+  
+  localStorage.setItem(STORAGE_KEYS.GAME_STATE, JSON.stringify(gameState));
 }
 
+// load game
 function loadGame() {
-  let saved = localStorage.getItem("memoryGameState");
+  let saved = localStorage.getItem(STORAGE_KEYS.GAME_STATE);
   if (!saved) return false;
   
   try {
     let data = JSON.parse(saved);
-    if (!data || !data.cards || data.cards.length === 0) return false;
+    if (!data || !data.cards || data.cards.length == 0) return false;
     
+    // restore state
     cards = data.cards;
     moves = data.moves || 0;
     timeLeft = data.timeLeft || 0;
     currentDifficulty = data.currentDifficulty || 'easy';
     currentLevel = data.currentLevel || 1;
-    stats = data.stats || { memory: 0, guess: 0, miss: 0 };
+    stats = data.stats || { memory: 0, miss: 0 };
     coins = data.coins || 0;
     combo = data.combo || 0;
     totalMatches = data.totalMatches || 0;
     totalAttempts = data.totalAttempts || 0;
-    seenCards = {};
-    if (data.seenCards) {
-      Object.entries(data.seenCards).forEach(([k, v]) => {
-        seenCards[k] = new Set(v);
-      });
-    }
-    
     cardsRemembered = data.cardsRemembered || 0;
     cardsForgotten = data.cardsForgotten || 0;
     
+    // restore seenCards
+    seenCards = {};
+    if (data.seenCards) {
+      for (let key in data.seenCards) {
+        seenCards[key] = new Set(data.seenCards[key]);
+      }
+    }
+    
     gameActive = true;
     initialTime = timeLeft;
+    elements.difficulty.value = currentDifficulty;
     
     setupGrid(cards.length);
     render();
     startTimer(timeLeft);
-    updateCoinsDisplay();
+    updateUI();
     
-    console.log("💾 Game loaded from save");
+    console.log("Game loaded from save");
     return true;
   } catch (e) {
     console.error("Failed to load game:", e);
@@ -791,33 +698,18 @@ function loadGame() {
   }
 }
 
-
-function adjustDifficulty() {
-  let total = cardsRemembered + cardsForgotten;
-  if (total === 0) return;
-
-  let rate = (cardsRemembered / total) * 100;
-
-  if (rate > 80 && currentLevel < 3) {
-    currentLevel++;
-    showMessage(`🎯 Great memory! Advanced to Level ${currentLevel}!`);
-  } else if (rate < 40 && currentLevel > 1) {
-    currentLevel--;
-    showMessage(`📉 Level adjusted to ${currentLevel} for better experience`);
-  }
+// initialize
+function initializeGame() {
+  clearBoard();
+  updateTimerDisplay(0);
+  elements.score.textContent = "";
+  hideResult();
   
-  document.getElementById("currentLevelDisplay").textContent = currentLevel;
-  generateLevelButtons();
-  selectLevel(currentLevel);
-}
-window.onload = function() {
-  document.getElementById("board").innerHTML = "";
-  document.getElementById("timer").textContent = "0:00";
-  document.getElementById("score").textContent = "";
-  document.getElementById("result").style.display = "none";
   cards = [];
   flipped = [];
   gameActive = false;
   moves = 0;
   combo = 0;
-};
+  
+  console.log("Memory Card Game loaded! Click Start Game to begin.");
+}
